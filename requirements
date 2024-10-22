@@ -3,3 +3,4 @@ pydub==0.25.1
 youtube-transcript-api==0.6.2
 IPython
 black
+streamlit

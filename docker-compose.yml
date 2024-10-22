@@ -3,6 +3,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env 
+    ports:
+      - "8501:8501"
     volumes:
       - .:/app
     depends_on:

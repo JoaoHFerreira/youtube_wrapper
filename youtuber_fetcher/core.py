@@ -4,6 +4,12 @@ import yt_dlp
 from pydub import AudioSegment
 from youtube_transcript_api import YouTubeTranscriptApi
 import json
+import os
+import sqlite3
+from pydub import AudioSegment
+from pydub.playback import play
+
+
 
 
 def save_audio(youtube_url, output_path="."):
@@ -67,55 +73,23 @@ def get_transcript(video_id, title, ln="en"):
                 ln,
             ],
         )
-
         safe_title = "".join([c if c.isalnum() else "_" for c in title])
         file_name = safe_title
 
-        with open(f"{file_name}.txt", "w", encoding="utf-8") as f:
-            for entry in transcript:
-                f.write(f"{entry['start']:.2f}s: {entry['text']}\n")
 
-        parsed_data = _get_transcript_list_dict(file_name)
+        transcript_dict_list = []
+        for entry in transcript:
+            entry["end"] = entry["start"] + entry["duration"]
+            transcript_dict_list.append(entry)
+
 
         with open(f"{file_name}.json", "w") as outfile:
-            json.dump(parsed_data, outfile, indent=4)  # Add indentation for readability
+            json.dump(transcript_dict_list, outfile, indent=4)
 
         return file_name + ".json"
 
     except Exception as e:
         print(f"Error fetching transcript: {e}")
-
-
-def _get_transcript_list_dict(transcript_name):
-    """
-    Parses a transcript file, extracts speech segments with start and end times,
-    and saves the data as JSON.
-
-    Args:
-        transcript_name (str): Name of the transcript file (without extension).
-        output_filename (str, optional): Name of the output JSON file. Defaults to "transcript_data.json".
-    """
-    transcript_name = transcript_name.split(".")[0]
-    parsed_data = []
-    with open(f"{transcript_name}.txt", "r") as file:
-        lines = list(filter(None, file.read().split("\n")))
-
-    for i in range(len(lines) - 1):
-        init_time, phrase = lines[i].split("s: ")
-        next_init_time, _ = lines[i + 1].split("s: ")
-        parsed_data.append(
-            {
-                "init_time": init_time.strip(),
-                "final_time": next_init_time.strip(),
-                "phrase": phrase.strip(),
-            }
-        )
-
-    init_time, phrase = lines[-1].split("s: ")
-    parsed_data.append(
-        {"init_time": init_time.strip(), "final_time": None, "phrase": phrase.strip()}
-    )
-    return parsed_data
 
 
 def slice_mp3_from_json(input_file, json_path, output_dir="sliced_data"):
@@ -125,30 +99,29 @@ def slice_mp3_from_json(input_file, json_path, output_dir="sliced_data"):
     Args:
         input_file (str): Path to the input MP3 file.
         output_dir (str): Path to the output directory.
-        json_data (list): List of dictionaries containing 'init_time' and 'final_time' values.
+        json_data (list): List of dictionaries containing 'start' and 'end' values.
     """
-
     with open(json_path, "r") as f:
         json_data = json.load(f)
 
     os.makedirs(output_dir, exist_ok=True)
-
     sound = AudioSegment.from_mp3(input_file)
-
-    # Iterate over the JSON data and slice the audio
-    for i, data in enumerate(json_data):
-        start_time = (
-            float(data["init_time"]) * 1000
-        )  # Convert seconds to milliseconds for pydub
-        end_time = (
-            float(data["final_time"]) * 1000 if "final_time" in data else len(sound)
-        )  # Handle missing final time
-
-        # Extract the audio segment
-        sliced_audio = sound[int(start_time) : int(end_time)]
-
-        # Create the output file name
-        output_file = os.path.join(output_dir, f"file_name_part{i+1}.mp3")
-
-        # Export the sliced audio segment as a new MP3 file
+    
+    # Process all elements except the last one
+    for index in range(len(json_data) - 1):
+        start_time = float(json_data[i]["start"]) * 1000
+        end_time = float(json_data[i]["end"]) * 1000
+        
+        sliced_audio = sound[int(start_time):int(end_time)]
+        output_file = os.path.join(output_dir, f"file_name_part{index}.mp3")
+        sliced_audio.export(output_file, format="mp3")
+    
+    # Handle the last element separately
+    if json_data:  # Check if the list is not empty
+        last_idx = len(json_data) - 1
+        start_time = float(json_data[last_idx]["start"]) * 1000
+        end_time = len(sound)  # Use total duration for the last segment
+        
+        sliced_audio = sound[int(start_time):int(end_time)]
+        output_file = os.path.join(output_dir, f"file_name_part{last_idx}.mp3")
         sliced_audio.export(output_file, format="mp3")
